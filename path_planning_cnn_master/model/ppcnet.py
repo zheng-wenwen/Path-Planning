@@ -1,8 +1,10 @@
+
 import torch
 from torch import nn
-from dataset.map_sample import MapSample
-from img_processing.gaussian_kernel import get_gaussian
-from model.pe import GaussianRelativePE
+from ..dataset.map_sample import MapSample
+from ..img_processing.gaussian_kernel import get_gaussian
+from ..model.pe import GaussianRelativePE
+
 
 class PPCNet(nn.Module):
     """ Path Planning CNN Network """    

@@ -14,6 +14,8 @@ actions = {
 
 # A* 算法找到最优路径
 def astar(env, start, goal):
+    start = tuple(start)
+    goal = tuple(goal)
     def heuristic(a, b):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
@@ -27,6 +29,7 @@ def astar(env, start, goal):
 
     while not open_set.empty():
         _, current = open_set.get()
+        
 
         if current == goal:
             path = []
@@ -34,6 +37,7 @@ def astar(env, start, goal):
                 path.append(current)
                 current = came_from[current]
             path.append(start)
+            
             return path[::-1]
 
         for direction in directions.values():
@@ -47,7 +51,7 @@ def astar(env, start, goal):
                     g_score[neighbor] = tentative_g_score
                     f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
                     open_set.put((f_score[neighbor], neighbor))
-
+    
     return []
 
 # 计算相对目标位置
@@ -87,16 +91,19 @@ def animate_agent_movement(env, agent_position, path, goal_position, replay_buff
     ani = animation.FuncAnimation(fig, update, frames=len(path), repeat=False)
     plt.show()
 
-# 主程序逻辑
-replay_buffer = []  # 存储 (每一步的环境, 当前动作, 相对目标位置) 元组
-path = astar(env, tuple(agent_position), goal_position)
 
-if path:
-    print("找到路径: ", path)
-    animate_agent_movement(env, agent_position, path, goal_position, replay_buffer)
-else:
-    print("未找到路径！")
 
-# 输出 replay_buffer 中的动作、相对目标位置和对应的环境信息
-for step, (env_snapshot, action, relative_goal_pos) in enumerate(replay_buffer):
-    print(f"Step {step + 1}: Action = {action}, Relative Goal Position = {relative_goal_pos}")
+if __name__ == '__main__':
+    # 主程序逻辑
+    replay_buffer = []  # 存储 (每一步的环境, 当前动作, 相对目标位置) 元组
+    path = astar(env, tuple(agent_position), goal_position)
+
+    if path:
+        print("找到路径: ", path)
+        animate_agent_movement(env, agent_position, path, goal_position, replay_buffer)
+    else:
+        print("未找到路径！")
+
+    # 输出 replay_buffer 中的动作、相对目标位置和对应的环境信息
+    for step, (env_snapshot, action, relative_goal_pos) in enumerate(replay_buffer):
+        print(f"Step {step + 1}: Action = {action}, Relative Goal Position = {relative_goal_pos}")
