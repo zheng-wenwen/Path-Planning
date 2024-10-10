@@ -7,6 +7,8 @@ from model import CNN, preprocess_data
 from Astar import astar, get_action
 from env import env, generate_random_environment, update_view, move_agent, env_size, directions
 from path_planning_cnn_master.model.ppcnet import PPCNet
+from dataset import Dataset
+from torch.nn.modules.loss import MSELoss, L1Loss
 
 # 生成相对终点位置
 def get_relative_goal_positions(states, goals):
@@ -58,17 +60,23 @@ def generate_expert_data(num_samples=100):
     return states, goals, starts ,envs
 
 # 训练模型并记录损失
-def train_model(model, train_loader, epochs=10, lr=0.001):
+def train_model(model, train_loader,loss_f, epochs=10, lr=0.001):
+    
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     loss_history = []
 
     for epoch in range(epochs):
         running_loss = 0.0
-        for inputs, labels, goals in train_loader:
+        for inputs, goals, starts, labels in train_loader:
+            
+            
             optimizer.zero_grad()
-            outputs = model(inputs, goals)  # 将状态和相对终点位置传递给模型
-            loss = criterion(outputs, labels)
+            #outputs = model(inputs, goals)  # 将状态和相对终点位置传递给模型
+            #loss = criterion(outputs, labels)
+            out = model(inputs, starts, goals)
+            
+            loss = loss_f(out.squeeze(1), labels)
             loss.backward()
             optimizer.step()
 
@@ -95,32 +103,35 @@ if __name__ == '__main__':
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     # 生成专家数据
     states, goals, starts , envs = generate_expert_data()
-    import ipdb
-    ipdb.set_trace()
+    
+    
 
     # 生成相对目标位置
-    goal_positions = get_relative_goal_positions(states, goals)
+    #goal_positions = get_relative_goal_positions(states, goals)
     
     #TODO there is no goal_positions in preprocess_data
     # 预处理数据，加入相对目标位置
-    states_tensor, actions_tensor, goal_tensor = preprocess_data(states, actions, goal_positions)
+    #states_tensor, actions_tensor, goal_tensor = preprocess_data(states, actions, goal_positions)
 
     # 创建数据集和数据加载器
     #TODO 1.这里很混乱，你原先的是input=state(path),label = action，goal。我改后建议为input= env,label = state(path) ,goal,start
     #TODO 2.修改数据集表示，由坐标拓展为图像。
     #TODO 3.适配ppcnet
     
-    dataset = TensorDataset(states_tensor, actions_tensor, goal_tensor)
-    train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+    dataset = Dataset(states, goals, starts, envs)
+    train_loader = DataLoader(dataset,batch_size=4,shuffle=True)
+    #dataset = TensorDataset(states_tensor, actions_tensor, goal_tensor)
+    #train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
     # 初始化CNN模型
     #model = CNN()
 
     #init PPCnet
     model = PPCNet(gaussian_blur_kernel=3).to(device)
+    loss_f = L1Loss().to(device)
 
     # 训练模型
-    loss_history = train_model(model, train_loader, epochs=10)
+    loss_history = train_model(model, train_loader,loss_f, epochs=100)
 
     # 保存模型
     model_save_path = 'trained_model_with_goal.pth'

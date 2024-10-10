@@ -13,7 +13,7 @@ from matplotlib.colors import ListedColormap
 
 
 # 环境配置
-env_size = 20
+env_size = 100
 agent_view = 9
 
 # 初始化环境：0 代表可行区域，2 代表障碍物，1 代表终点

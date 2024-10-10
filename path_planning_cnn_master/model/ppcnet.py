@@ -58,6 +58,7 @@ class PPCNet(nn.Module):
 
     def pe_forward(self, x, start, goal):
         zeros = torch.zeros_like(x, device=x.device, dtype=x.dtype)
+        
         pe_start = self.pe(zeros, start)
         pe_goal = self.pe(zeros, goal)
         return torch.cat([x, pe_start, pe_goal], dim=1)
@@ -78,6 +79,7 @@ class PPCNet(nn.Module):
                 x = self.blur(x)
         skip_conn = []
         x = self.pe_forward(x, start, goal)
+
         for i, conv in enumerate(self.conv_down):
             x = conv(x)
             if i < len(self.conv_down) - 1:
