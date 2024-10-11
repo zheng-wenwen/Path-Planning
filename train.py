@@ -9,6 +9,12 @@ from env import env, generate_random_environment, update_view, move_agent, env_s
 from path_planning_cnn_master.model.ppcnet import PPCNet
 from dataset import Dataset
 from torch.nn.modules.loss import MSELoss, L1Loss
+import matplotlib.pyplot as plt 
+import cv2
+from path_planning_cnn_master.lr_scheduler.scheduler import CosineAnnealingWarmRestartsDecay
+from torch.optim import Adam
+from focalloss import FocalLoss
+from l1loss import l1_loss
 
 # 生成相对终点位置
 def get_relative_goal_positions(states, goals):
@@ -63,7 +69,10 @@ def generate_expert_data(num_samples=100):
 def train_model(model, train_loader,loss_f, epochs=10, lr=0.001):
     
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    #optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=lr)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=200)
+    scheduler = CosineAnnealingWarmRestartsDecay(optimizer, T_0=150, decay=0.995)
     loss_history = []
 
     for epoch in range(epochs):
@@ -79,14 +88,80 @@ def train_model(model, train_loader,loss_f, epochs=10, lr=0.001):
             loss = loss_f(out.squeeze(1), labels)
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             running_loss += loss.item()
 
         avg_loss = running_loss / len(train_loader)
         loss_history.append(avg_loss)
-        print(f'第 {epoch + 1} 轮，损失: {avg_loss:.3f}')
+        print(f'第 {epoch + 1} 轮，损失: {avg_loss:.5f}')
 
     return loss_history
+
+
+
+  
+def visualize_and_save(data, goals, starts, filename, cmap=None):
+    # 类别到颜色的映射  
+    COLOR_MAP = {  
+    0: [0, 0, 0],  # 背景 - 黑色  
+    1: [0, 255, 0],  # 路径 - 绿色  
+    2: [255, 0, 0]  # 障碍物 - 红色  
+    }    
+    # 将数据转换为彩色图像  
+    height, width = data.shape  
+    image = np.zeros((height, width, 3), dtype=np.uint8)  
+      
+    for y in range(height):  
+        for x in range(width):  
+            category = data[y, x]
+            if category>=0 and category<0.5:
+                image[y, x]= [0,0,0]
+            elif category>=0.5 and category<=1:
+                image[y,x] = [0,255,0]
+            elif category ==2.0:
+                image[y,x]= [255,0,0]
+
+            """if category in COLOR_MAP:  
+                image[y, x] = COLOR_MAP[category]"""  
+      
+    # 标记 goals 和 starts  
+    
+    cv2.circle(image, (int(goals[1]), int(goals[0])), 5, [0, 0, 255], -1)  # 蓝色圈表示 goals  
+    
+    cv2.circle(image, (int(starts[1]), int(starts[0])), 5, [255, 0, 255], -1)  # 洋红色圈表示 starts  
+      
+    # 保存图像  
+    plt.imsave(filename, image)  
+    plt.close()  
+
+def test_model(model, data_loader):
+    save_path = './result/'
+    model.eval()
+    idx = 0
+    for inputs, goals, starts, labels in data_loader:
+        out = model(inputs, starts, goals)
+  
+
+        out = out.squeeze(0).squeeze(0)  # 去除 batch 维度 
+        input_data =  inputs.squeeze(0).squeeze(0)
+        label_data = labels.squeeze(0)
+
+        goal_points = goals.squeeze(0)
+        start_points = starts.squeeze(0)
+          
+        # 可视化并保存 input, label 和 output  
+        """import ipdb
+        ipdb.set_trace()"""
+        visualize_and_save(input_data, goal_points, start_points, save_path + str(idx) + "_input.png")  
+        visualize_and_save(label_data, goal_points, start_points, save_path + str(idx) + "_label.png")  
+        visualize_and_save(out.detach().cpu().numpy(), goal_points, start_points, save_path + str(idx) + "_output.png")  
+        idx = idx+1
+        
+
+
+    return 0
+
 
 # 绘制损失曲线
 def plot_loss(loss_history):
@@ -99,10 +174,12 @@ def plot_loss(loss_history):
     plt.grid(True)
     plt.show()
 
-if __name__ == '__main__':
+
+
+def train():
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     # 生成专家数据
-    states, goals, starts , envs = generate_expert_data()
+    states, goals, starts , envs = generate_expert_data(num_samples=500)
     
     
 
@@ -119,7 +196,7 @@ if __name__ == '__main__':
     #TODO 3.适配ppcnet
     
     dataset = Dataset(states, goals, starts, envs)
-    train_loader = DataLoader(dataset,batch_size=4,shuffle=True)
+    train_loader = DataLoader(dataset,batch_size=8,shuffle=True)
     #dataset = TensorDataset(states_tensor, actions_tensor, goal_tensor)
     #train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
@@ -128,15 +205,44 @@ if __name__ == '__main__':
 
     #init PPCnet
     model = PPCNet(gaussian_blur_kernel=3).to(device)
-    loss_f = L1Loss().to(device)
-
+    #loss_f = L1Loss().to(device)
+    #loss_f = FocalLoss(alpha=1, gamma=2, reduction='mean').to(device)  
+    loss_f = l1_loss 
     # 训练模型
-    loss_history = train_model(model, train_loader,loss_f, epochs=100)
+    loss_history = train_model(model, train_loader,loss_f, epochs=500, lr=1e-5)
 
     # 保存模型
     model_save_path = 'trained_model_with_goal.pth'
     torch.save(model.state_dict(), model_save_path)
     print(f'模型已保存至 {model_save_path}')
-
+    
     # 绘制损失曲线
-    plot_loss(loss_history)
+    #plot_loss(loss_history)
+
+    #test
+    #test_loader = DataLoader(dataset,batch_size=1,shuffle=True)
+    #test_model(model, test_loader)
+
+
+def test():
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # 生成专家数据
+    states, goals, starts , envs = generate_expert_data(num_samples=10)
+    
+    dataset = Dataset(states, goals, starts, envs)
+    data_loader = DataLoader(dataset,batch_size=1,shuffle=True)
+
+    #init PPCnet
+    model = PPCNet(gaussian_blur_kernel=3).to(device)
+    model.load_state_dict(torch.load('trained_model_with_goal.pth'))  
+    # test模型
+    test_model(model, data_loader)
+
+
+
+
+
+
+if __name__ == '__main__':
+    train()
+    test()

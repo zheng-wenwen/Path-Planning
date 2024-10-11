@@ -37,9 +37,12 @@ class Dataset(Dataset):
         state = torch.tensor(state_tmp, dtype=torch.float32, device=self._device)
 
         goal = self.goals[idx]
+        
 
         start = self.starts[idx]
         
+        env[int(goal[0]),int(goal[1])] =1
+        env[int(start[0]),int(start[1])] =1
 
         return env.unsqueeze(0) , goal , start, state 
 
